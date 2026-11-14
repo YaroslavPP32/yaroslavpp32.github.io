@@ -6,15 +6,19 @@
     <title>Location Test</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
-        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 10px; background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); cursor: pointer; }
-        #status { margin-top: 20px; text-align: center; white-space: pre-wrap; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; background-color: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
+        button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 10px; background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); cursor: pointer; margin: 5px; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status { margin-top: 20px; text-align: center; white-space: pre-wrap; max-width: 400px; }
+        #debug { margin-top: 20px; font-size: 12px; opacity: 0.7; text-align: left; white-space: pre-wrap; background: rgba(0,0,0,0.05); padding: 10px; border-radius: 5px; max-width: 400px; width: 100%; box-sizing: border-box; }
+        .secondary-btn { padding: 10px 20px; font-size: 16px; }
     </style>
 </head>
 <body>
     <h2>Тест геолокации</h2>
     <button id="sendLocationBtn">📍 Отправить местоположение</button>
     <div id="status"></div>
+    <div id="debug"></div>
 
     <script>
         const tg = window.Telegram.WebApp;
@@ -22,9 +26,22 @@
 
         const btn = document.getElementById('sendLocationBtn');
         const statusDiv = document.getElementById('status');
+        const debugDiv = document.getElementById('debug');
 
-        // Вспомогательная функция для инициализации с повторными попытками
-        function initLocationManager(maxAttempts = 3) {
+        function updateDebug() {
+            const lm = tg.LocationManager;
+            if (!lm) {
+                debugDiv.innerText = "LocationManager: отсутствует";
+                return;
+            }
+            debugDiv.innerText =
+                "isInited: " + lm.isInited + "\n" +
+                "isAccessGranted: " + lm.isAccessGranted + "\n" +
+                "isLocationAvailable: " + lm.isLocationAvailable;
+        }
+
+        // Инициализация LocationManager с повторными попытками
+        function initLocationManager(maxAttempts = 5) {
             return new Promise((resolve, reject) => {
                 let attempts = 0;
 
@@ -36,21 +53,19 @@
                     }
 
                     try {
-                        // init() может принимать колбэк
                         tg.LocationManager.init(() => {
+                            updateDebug();
                             if (tg.LocationManager.isInited) {
                                 resolve();
                             } else if (attempts < maxAttempts) {
-                                // Если не инициализировался, пробуем ещё раз чуть позже
-                                setTimeout(attempt, 50);
+                                setTimeout(attempt, 100);
                             } else {
-                                reject(new Error('LocationManager не инициализировался после нескольких попыток'));
+                                reject(new Error('LocationManager не инициализировался после ' + maxAttempts + ' попыток'));
                             }
                         });
                     } catch (err) {
-                        // Если init() выбросил ошибку синхронно
                         if (attempts < maxAttempts) {
-                            setTimeout(attempt, 50);
+                            setTimeout(attempt, 100);
                         } else {
                             reject(err);
                         }
@@ -61,8 +76,32 @@
             });
         }
 
+        // Запрос координат через колбэк-обёртку
+        function requestLocation() {
+            return new Promise((resolve) => {
+                tg.LocationManager.getLocation((locationData) => {
+                    resolve(locationData);
+                });
+            });
+        }
+
+        // Показать кнопку открытия настроек
+        function showSettingsButton(message) {
+            statusDiv.innerHTML = message + '<br><br>';
+            const settingsBtn = document.createElement('button');
+            settingsBtn.className = 'secondary-btn';
+            settingsBtn.innerText = '⚙️ Открыть настройки';
+            settingsBtn.onclick = () => {
+                tg.LocationManager.openSettings();
+            };
+            statusDiv.appendChild(settingsBtn);
+            btn.disabled = false;
+        }
+
         btn.addEventListener('click', async () => {
             btn.disabled = true;
+            statusDiv.innerText = '';
+            updateDebug();
 
             // 1. Проверка поддержки
             if (!tg.LocationManager) {
@@ -71,7 +110,7 @@
                 return;
             }
 
-            // 2. Инициализация через init()
+            // 2. Инициализация
             if (!tg.LocationManager.isInited) {
                 statusDiv.innerText = "⏳ Инициализация геолокации...";
                 try {
@@ -84,39 +123,75 @@
                 }
             }
 
-            // 3. Запрос координат
-            statusDiv.innerText = "⏳ Запрашиваем геолокацию...";
-            try {
-                // getLocation() в стандартном API работает через колбэк
-                const location = await new Promise((resolve) => {
-                    tg.LocationManager.getLocation((locationData) => {
-                        resolve(locationData);
-                    });
-                });
+            updateDebug();
+
+            // 3. Проверка доступности геолокации на устройстве
+            if (!tg.LocationManager.isLocationAvailable) {
+                statusDiv.innerText = "❌ Геолокация недоступна на этом устройстве (возможно, отключена в системе или это десктоп).";
+                btn.disabled = false;
+                return;
+            }
+
+            // 4. Проверка разрешения
+            if (!tg.LocationManager.isAccessGranted) {
+                statusDiv.innerText = "⏳ Запрашиваем разрешение...";
+
+                // Пытаемся запросить разрешение через getLocation
+                let location = await requestLocation();
+                updateDebug();
 
                 if (!location) {
-                    statusDiv.innerText = "❌ Вы отклонили запрос на геолокацию.";
-                    btn.disabled = false;
+                    // Разрешение не выдано
+                    showSettingsButton(
+                        "❌ Доступ к геолокации не предоставлен.\n\n" +
+                        "Нажмите «Открыть настройки» и включите геолокацию.\n" +
+                        "⚠️ После изменения настроек полностью закройте и откройте Mini App заново."
+                    );
                     return;
                 }
 
-                statusDiv.innerText = "✅ Координаты получены. Отправляем боту...";
+                // Разрешение выдано — используем полученные координаты
+                await sendCoordinates(location);
+                return;
+            }
 
-                const dataToSend = {
-                    lat: location.latitude,
-                    lon: location.longitude,
-                    accuracy: location.horizontal_accuracy
-                };
+            // 5. Разрешение уже есть — запрашиваем координаты
+            statusDiv.innerText = "⏳ Запрашиваем геолокацию...";
+            try {
+                const location = await requestLocation();
+                updateDebug();
 
-                // Отправляем данные и закрываем Mini App
-                tg.sendData(JSON.stringify(dataToSend));
+                if (!location) {
+                    showSettingsButton(
+                        "❌ Не удалось получить координаты.\n\n" +
+                        "Проверьте разрешения в настройках."
+                    );
+                    return;
+                }
 
+                await sendCoordinates(location);
             } catch (error) {
                 console.error("Ошибка получения геолокации:", error);
                 statusDiv.innerText = "❌ Ошибка: " + error.message;
                 btn.disabled = false;
             }
         });
+
+        async function sendCoordinates(location) {
+            statusDiv.innerText = "✅ Координаты получены. Отправляем боту...";
+
+            const dataToSend = {
+                lat: location.latitude,
+                lon: location.longitude,
+                accuracy: location.horizontal_accuracy
+            };
+
+            // Отправляем данные боту (Mini App закроется)
+            tg.sendData(JSON.stringify(dataToSend));
+        }
+
+        // Первоначальное обновление отладочной информации
+        updateDebug();
     </script>
 </body>
 </html>
