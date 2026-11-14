@@ -33,14 +33,20 @@
                 return;
             }
 
-            // 2. Инициализация (mount) — обязательный шаг
-            if (!tg.LocationManager.isMounted) {
+            // 2. Инициализация (init) — правильный метод для telegram-web-app.js
+            if (!tg.LocationManager.isInited) {
                 statusDiv.innerText = "⏳ Инициализация геолокации...";
                 try {
-                    await tg.LocationManager.mount();
-                } catch (mountError) {
-                    console.error("Ошибка mount:", mountError);
-                    statusDiv.innerText = "❌ Не удалось инициализировать геолокацию: " + mountError.message;
+                    // Оборачиваем колбэк в Promise для удобства
+                    await new Promise((resolve, reject) => {
+                        tg.LocationManager.init((error) => {
+                            if (error) reject(error);
+                            else resolve();
+                        });
+                    });
+                } catch (initError) {
+                    console.error("Ошибка init:", initError);
+                    statusDiv.innerText = "❌ Не удалось инициализировать геолокацию: " + initError.message;
                     btn.disabled = false;
                     return;
                 }
@@ -49,7 +55,12 @@
             // 3. Запрос координат
             statusDiv.innerText = "⏳ Запрашиваем геолокацию...";
             try {
-                const location = await tg.LocationManager.getLocation();
+                const location = await new Promise((resolve, reject) => {
+                    tg.LocationManager.getLocation((locationData) => {
+                        // Колбэк вызывается с null, если доступ не предоставлен
+                        resolve(locationData);
+                    });
+                });
 
                 if (!location) {
                     statusDiv.innerText = "❌ Вы отклонили запрос на геолокацию.";
