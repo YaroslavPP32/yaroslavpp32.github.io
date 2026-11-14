@@ -14,7 +14,7 @@
         .metric-value { font-weight: 600; font-variant-numeric: tabular-nums; }
         button { width: 100%; padding: 15px; font-size: 17px; border: none; border-radius: 10px; background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); cursor: pointer; margin-top: 10px; }
         button:disabled { opacity: 0.5; }
-        #status { margin-top: 15px; text-align: center; font-size: 14px; }
+        #status { margin-top: 15px; text-align: center; font-size: 14px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -45,7 +45,7 @@
         const statusDiv = document.getElementById('status');
         const metricsCard = document.getElementById('metricsCard');
 
-        // Инициализация LocationManager (как в рабочей версии)
+        // Инициализация LocationManager с повторными попытками
         async function ensureLocationManager() {
             if (!tg.LocationManager) throw new Error('LocationManager недоступен');
             if (locationManagerInited && tg.LocationManager.isInited) return;
@@ -79,7 +79,7 @@
 
         function formatSpeed(mps) {
             if (mps === null || mps === undefined) return '—';
-            return (mps * 3.6).toFixed(1) + ' км/ч'; // перевод м/с в км/ч
+            return (mps * 3.6).toFixed(1) + ' км/ч'; // м/с -> км/ч
         }
 
         function formatCourse(deg) {
@@ -124,7 +124,7 @@
             startBtn.style.display = 'none';
             stopBtn.style.display = 'block';
 
-            tick(); // первый вызов сразу
+            tick();
             watchInterval = setInterval(tick, 1000);
         });
 
