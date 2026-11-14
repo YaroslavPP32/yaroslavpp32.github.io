@@ -8,7 +8,7 @@
     <style>
         body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: var(--tg-theme-bg-color); color: var(--tg-theme-text-color); }
         button { padding: 15px 30px; font-size: 18px; border: none; border-radius: 10px; background-color: var(--tg-theme-button-color); color: var(--tg-theme-button-text-color); cursor: pointer; }
-        #status { margin-top: 20px; text-align: center; }
+        #status { margin-top: 20px; text-align: center; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -17,46 +17,60 @@
     <div id="status"></div>
 
     <script>
-        // Инициализация Telegram WebApp
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Развернуть на весь экран
+        tg.expand();
 
         const btn = document.getElementById('sendLocationBtn');
         const statusDiv = document.getElementById('status');
 
         btn.addEventListener('click', async () => {
-            // Проверяем, поддерживается ли LocationManager в этой версии
+            btn.disabled = true;
+
+            // 1. Проверка поддержки
             if (!tg.LocationManager) {
                 statusDiv.innerText = "❌ LocationManager не поддерживается вашей версией Telegram.";
+                btn.disabled = false;
                 return;
             }
 
-            statusDiv.innerText = "⏳ Запрашиваем геолокацию...";
+            // 2. Инициализация (mount) — обязательный шаг
+            if (!tg.LocationManager.isMounted) {
+                statusDiv.innerText = "⏳ Инициализация геолокации...";
+                try {
+                    await tg.LocationManager.mount();
+                } catch (mountError) {
+                    console.error("Ошибка mount:", mountError);
+                    statusDiv.innerText = "❌ Не удалось инициализировать геолокацию: " + mountError.message;
+                    btn.disabled = false;
+                    return;
+                }
+            }
 
+            // 3. Запрос координат
+            statusDiv.innerText = "⏳ Запрашиваем геолокацию...";
             try {
-                // Запрашиваем координаты. Появится системное окно разрешения.
                 const location = await tg.LocationManager.getLocation();
-                
+
                 if (!location) {
                     statusDiv.innerText = "❌ Вы отклонили запрос на геолокацию.";
+                    btn.disabled = false;
                     return;
                 }
 
-                // Формируем данные для отправки
+                statusDiv.innerText = "✅ Координаты получены. Отправляем боту...";
+
                 const dataToSend = {
                     lat: location.latitude,
                     lon: location.longitude,
-                    // Можно добавить и другие поля, например точность
                     accuracy: location.horizontal_accuracy
                 };
-                statusDiv.innerText = "✅ Координаты получены. Отправляем боту...";
 
-                // Отправляем данные боту. Mini App закроется.
                 tg.sendData(JSON.stringify(dataToSend));
 
             } catch (error) {
                 console.error("Ошибка получения геолокации:", error);
                 statusDiv.innerText = "❌ Ошибка: " + error.message;
+                btn.disabled = false;
             }
         });
     </script>
